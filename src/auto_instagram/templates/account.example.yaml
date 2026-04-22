@@ -1,0 +1,27 @@
+handle: your_instagram_handle
+browser: patchright
+
+# Match these to the real browser that produced your cookies. Drift between
+# these and the cookie's origin is the #1 cause of `challenge_required`.
+user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+viewport:
+  width: 1440
+  height: 900
+locale: "en-US"
+timezone: "America/Los_Angeles"
+
+# Optional residential proxy. Strongly recommended if you run the bot on a
+# different machine from where you exported cookies.
+# proxy:
+#   server: "http://user:pass@host:port"
+
+pacing:
+  max_posts_per_day: 3
+  min_step_delay_seconds: 30
+  max_step_delay_seconds: 180
+  pre_run_idle_seconds_min: 60
+  pre_run_idle_seconds_max: 180
+
+# Keep false for first runs so you can watch the browser work. Flip to true
+# once your selectors are stable.
+headless: false

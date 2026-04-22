@@ -25,26 +25,47 @@ Supported post types (web UI constraints, April 2026):
 
 ## Install
 
+One command with [pipx](https://pipx.pypa.io/) (recommended):
+
 ```bash
-# From source
-git clone <this-repo> auto-instagram
+pipx install auto-instagram
+auto-ig init --account demo
+```
+
+Or with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install auto-instagram
+auto-ig init --account demo
+```
+
+`auto-ig init` installs the patched Chrome channel Patchright needs and scaffolds a working directory in `.`:
+
+```
+./config/demo.yaml            # account config from the shipped template
+./content/example-post/       # sample post descriptor
+./sessions/                   # session files (gitignored)
+./.gitignore                  # appended with auto-instagram entries
+```
+
+It is safe to re-run — existing files are preserved.
+
+### From source (contributors)
+
+```bash
+git clone https://github.com/xtea/auto-instagram
 cd auto-instagram
-uv sync                    # or: pip install -e '.[dev]'
-patchright install chrome  # downloads the patched Chrome for Playwright
+uv sync
+uv run auto-ig init --account demo
 ```
 
 ## Configure an account
 
-1. Copy the example config to the account name you want to use:
+Edit `config/<account>.yaml`. The important fields:
 
-   ```bash
-   cp config/account.example.yaml config/demo.yaml
-   ```
-
-2. Edit `config/demo.yaml`. The important fields:
-   - `handle`: your IG username (for display only)
-   - `user_agent`, `viewport`, `locale`, `timezone`: **match the browser you'll log in from**. Drift between these and the cookie's origin is the #1 cause of `challenge_required`.
-   - `pacing.max_posts_per_day`: start at 1–3. Hammering a personal account gets it flagged.
+- `handle` — your IG username (display only)
+- `user_agent`, `viewport`, `locale`, `timezone` — **match the browser you'll log in from**. Drift between these and the cookie's origin is the #1 cause of `challenge_required`.
+- `pacing.max_posts_per_day` — start at 1–3. Hammering a personal account gets it flagged.
 
 ## Authenticate
 

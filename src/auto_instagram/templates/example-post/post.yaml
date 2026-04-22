@@ -1,0 +1,17 @@
+# type: feed | carousel | reel
+type: feed
+
+caption: |
+  Hello from auto-instagram. #opensource #automation
+
+# Paths are relative to this post.yaml. Put your media in ./media/.
+media:
+  - ./media/photo.jpg
+
+# Optional — omit for immediate publish. Use ISO-8601 (UTC or with offset).
+# schedule: 2026-04-25T14:00:00Z
+
+# Optional
+# user_tags:
+#   - handle: friend_handle
+# location: "San Francisco, California"

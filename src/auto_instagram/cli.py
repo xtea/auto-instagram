@@ -14,6 +14,7 @@ from .auth.login import run_login
 from .auth.session import ChallengeRequiredError, NotAuthenticatedError
 from .config import Settings, load_account_config
 from .content.loader import discover_posts, load_post
+from .init_cmd import run_init
 from .publisher.base import PublishResult
 from .publisher.playwright_web import PlaywrightWebPublisher
 from .queue.pacer import can_publish_now
@@ -36,6 +37,21 @@ def _settings(account: str | None) -> tuple[Settings, str]:
     name = account or s.account
     setup_logging(s.log_level)
     return s, name
+
+
+@app.command()
+def init(
+    account: Annotated[str, typer.Option("--account", "-a", help="Account name to scaffold a config for")] = "demo",
+    directory: Annotated[Path, typer.Option("--dir", "-d", help="Working directory to scaffold into")] = Path("."),
+    skip_chrome: Annotated[bool, typer.Option("--skip-chrome", help="Skip Patchright Chrome install")] = False,
+) -> None:
+    """Scaffold a working directory and install Patchright Chrome.
+
+    Creates ./config/<account>.yaml, ./content/example-post/, and ./sessions/
+    from packaged templates, then installs the Chrome channel Patchright
+    needs. Safe to re-run — existing files are preserved.
+    """
+    run_init(account=account, skip_chrome=skip_chrome, target_dir=directory)
 
 
 @app.command()

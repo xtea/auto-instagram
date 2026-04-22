@@ -1,6 +1,6 @@
 [project]
 name = "auto-instagram"
-version = "0.1.0"
+version = "0.1.1"
 description = "Open-source Instagram publisher that drives instagram.com with Playwright and imported cookies."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,8 +42,9 @@ dev = [
 auto-ig = "auto_instagram.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/auto-instagram/auto-instagram"
-Issues = "https://github.com/auto-instagram/auto-instagram/issues"
+Homepage = "https://github.com/xtea/auto-instagram"
+Issues = "https://github.com/xtea/auto-instagram/issues"
+Repository = "https://github.com/xtea/auto-instagram"
 
 [build-system]
 requires = ["hatchling>=1.26.0"]
@@ -51,6 +52,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/auto_instagram"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
 
 [tool.ruff]
 line-length = 100
