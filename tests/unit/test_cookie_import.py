@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from auto_instagram.auth.cookie_import import convert_cookie_editor_json
+from auto_instagram.auth.cookie_import import (
+    convert_cookie_editor_json,
+    convert_cookies_to_storage_state,
+)
 
 
 def _cookie(name: str, value: str = "x", **extra: object) -> dict:
@@ -112,3 +115,86 @@ def test_samesite_normalization(tmp_path: Path) -> None:
     csrf = next(c for c in data["cookies"] if c["name"] == "csrftoken")
     assert sess["sameSite"] == "None"
     assert csrf["sameSite"] == "Strict"
+
+
+# ---- Netscape cookies.txt format ----
+
+
+def _netscape_row(
+    domain: str, name: str, value: str, *, http_only: bool = False, secure: bool = True
+) -> str:
+    line = "\t".join([
+        domain,
+        "TRUE",
+        "/",
+        "TRUE" if secure else "FALSE",
+        "1999999999",
+        name,
+        value,
+    ])
+    return f"#HttpOnly_{line}" if http_only else line
+
+
+def _netscape_full() -> str:
+    rows = [
+        "# Netscape HTTP Cookie File",
+        "# comment",
+        "",
+        _netscape_row(".instagram.com", "sessionid", "abc", http_only=True),
+        _netscape_row(".instagram.com", "csrftoken", "xyz"),
+        _netscape_row(".instagram.com", "ds_user_id", "1234"),
+        _netscape_row(".instagram.com", "mid", "m"),
+        _netscape_row(".instagram.com", "ig_did", "d"),
+        _netscape_row(".instagram.com", "rur", "r"),
+        _netscape_row(".instagram.com", "ig_cb", "b"),
+        _netscape_row(".instagram.com", "datr", "t"),
+        _netscape_row(".example.com", "other", "ignored"),
+    ]
+    return "\n".join(rows) + "\n"
+
+
+def test_netscape_auto_detect(tmp_path: Path) -> None:
+    src = tmp_path / "cookies.txt"
+    src.write_text(_netscape_full())
+    dst = tmp_path / "storage.json"
+    summary = convert_cookies_to_storage_state(src, dst)
+    assert summary["format"] == "netscape"
+    assert summary["cookies_written"] == 8
+    assert summary["total_parsed"] >= 9  # includes the example.com row
+    assert summary["missing_required"] == []
+    assert summary["missing_recommended"] == []
+    data = json.loads(dst.read_text())
+    assert all("instagram.com" in c["domain"] for c in data["cookies"])
+    sess = next(c for c in data["cookies"] if c["name"] == "sessionid")
+    assert sess["httpOnly"] is True
+    assert sess["value"] == "abc"
+
+
+def test_netscape_rejects_missing_required(tmp_path: Path) -> None:
+    rows = [
+        "# Netscape HTTP Cookie File",
+        _netscape_row(".instagram.com", "sessionid", "abc"),
+        _netscape_row(".instagram.com", "csrftoken", "xyz"),
+    ]
+    src = tmp_path / "cookies.txt"
+    src.write_text("\n".join(rows) + "\n")
+    dst = tmp_path / "storage.json"
+    with pytest.raises(ValueError, match="missing required"):
+        convert_cookies_to_storage_state(src, dst)
+
+
+def test_netscape_ignores_comments_and_blank_lines(tmp_path: Path) -> None:
+    src = tmp_path / "cookies.txt"
+    src.write_text(_netscape_full())
+    dst = tmp_path / "storage.json"
+    convert_cookies_to_storage_state(src, dst)
+    data = json.loads(dst.read_text())
+    assert all(c["name"] for c in data["cookies"])
+
+
+def test_auto_detect_routes_json(tmp_path: Path) -> None:
+    src = tmp_path / "cookies.json"
+    src.write_text(json.dumps(_full_export()))
+    dst = tmp_path / "storage.json"
+    summary = convert_cookies_to_storage_state(src, dst)
+    assert summary["format"] == "cookie-editor-json"

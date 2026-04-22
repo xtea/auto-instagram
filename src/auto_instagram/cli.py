@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .auth.cookie_import import convert_cookie_editor_json
+from .auth.cookie_import import convert_cookies_to_storage_state
 from .auth.login import run_login
 from .auth.session import ChallengeRequiredError, NotAuthenticatedError
 from .config import Settings, load_account_config
@@ -50,17 +50,21 @@ def login(account: AccountOpt = None) -> None:
 
 @app.command("import-cookies")
 def import_cookies(
-    source: Annotated[Path, typer.Argument(help="Cookie-Editor JSON export path")],
+    source: Annotated[Path, typer.Argument(help="Cookies file (Cookie-Editor JSON or Netscape cookies.txt)")],
     account: AccountOpt = None,
 ) -> None:
-    """Convert a Cookie-Editor JSON export to a Playwright session."""
+    """Convert a browser cookies export to a Playwright session.
+
+    Supports two formats (auto-detected): Cookie-Editor / EditThisCookie JSON,
+    and Netscape cookies.txt (e.g. from the 'Get cookies.txt LOCALLY' extension).
+    """
     s, name = _settings(account)
     _ = load_account_config(s.account_config_file(name))  # validate config exists
     session_file = s.session_file(name)
-    summary = convert_cookie_editor_json(source, session_file)
+    summary = convert_cookies_to_storage_state(source, session_file)
     console.print(
         f"[green]Session saved to {session_file}[/green]\n"
-        f"cookies: {summary['cookies_written']}  "
+        f"format: {summary['format']}  cookies: {summary['cookies_written']} / {summary['total_parsed']} parsed  "
         f"missing_recommended: {summary['missing_recommended'] or 'none'}"
     )
 

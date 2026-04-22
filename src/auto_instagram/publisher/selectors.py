@@ -7,23 +7,10 @@ Rules:
 """
 from __future__ import annotations
 
-# Top navigation — "Create" / "New post" icon
-CREATE_BUTTON_ALTERNATIVES = [
-    'svg[aria-label="New post"]',
-    'a[href="#"][role="link"]:has(svg[aria-label="New post"])',
-    'div[role="button"]:has(svg[aria-label="New post"])',
-]
-
-# After clicking Create, a popover may surface "Post" vs "Story" vs "Reel".
-# We explicitly pick the one matching the post type.
-CREATE_SUBMENU_POST_ALTERNATIVES = [
-    'a[role="link"]:has-text("Post")',
-    'div[role="button"]:has-text("Post")',
-]
-CREATE_SUBMENU_REEL_ALTERNATIVES = [
-    'a[role="link"]:has-text("Reel")',
-    'div[role="button"]:has-text("Reel")',
-]
+# Direct URL to the Create flow — much more reliable than clicking the
+# sidebar "New post" button, which dispatches click via an internal React
+# handler that resists synthetic clicks from Playwright.
+CREATE_DIRECT_URL = "https://www.instagram.com/create/select/"
 
 # The Create modal's hidden file input accepts multi-files for carousel.
 CREATE_FILE_INPUT = 'input[type="file"][accept*="image"], input[type="file"][accept*="video"], form[role="presentation"] input[type="file"]'
@@ -41,10 +28,11 @@ MODAL_ADD_MORE_ALTERNATIVES = [
     'svg[aria-label="Open media gallery"]',
 ]
 
-# Caption input
+# Caption input. IG uses a Unicode ellipsis (…, U+2026) in the aria-label;
+# partial-match selectors avoid that fragility.
 CAPTION_TEXTAREA_ALTERNATIVES = [
-    'textarea[aria-label="Write a caption..."]',
-    'div[aria-label="Write a caption..."][contenteditable="true"]',
+    'textarea[aria-label^="Write a caption"]',
+    'div[aria-label^="Write a caption"][contenteditable="true"]',
 ]
 
 # Reel-specific: after uploading a vertical video IG may show an "OK" confirm

@@ -16,6 +16,7 @@ from ..auth.session import (
     ChallengeRequiredError,
     NotAuthenticatedError,
     detect_challenge,
+    dismiss_popups,
     is_logged_in,
 )
 from ..browser.factory import launch_context
@@ -25,10 +26,8 @@ from ..utils.logging import get_logger
 from .base import PublishResult
 from .selectors import (
     CAPTION_TEXTAREA_ALTERNATIVES,
-    CREATE_BUTTON_ALTERNATIVES,
+    CREATE_DIRECT_URL,
     CREATE_FILE_INPUT,
-    CREATE_SUBMENU_POST_ALTERNATIVES,
-    CREATE_SUBMENU_REEL_ALTERNATIVES,
     MODAL_NEXT_BUTTON_TEXT,
     MODAL_SHARE_BUTTON_TEXT,
     POST_SHARED_TEXT_ALTERNATIVES,
@@ -70,6 +69,7 @@ class PlaywrightWebPublisher:
                 raise NotAuthenticatedError(
                     "Session appears invalid. Re-authenticate with `auto-ig login`."
                 )
+            await dismiss_popups(page)
 
             await _pre_run_idle(page, self._pacing)
             try:
@@ -84,21 +84,16 @@ class PlaywrightWebPublisher:
     async def _run_flow(
         self, page: Page, post: Post, *, dry_run: bool
     ) -> PublishResult:
-        log.info("Opening Create modal for %s (%s)", post.source_dir.name, post.type.value)
+        log.info("Opening Create page for %s (%s)", post.source_dir.name, post.type.value)
 
-        await _click_first(page, CREATE_BUTTON_ALTERNATIVES, label="Create button")
+        # Directly navigating to /create/select/ is more robust than clicking
+        # the sidebar "New post" button — the sidebar is a JS-handler tangle
+        # that resists synthetic clicks, while the route exposes the file input
+        # immediately. Works for feed, carousel, and Reel uploads alike: IG
+        # picks the path from the media type after upload.
+        await page.goto(CREATE_DIRECT_URL, wait_until="domcontentloaded")
         await _humanize_delay(self._pacing)
 
-        # Choose Post vs Reel from the Create submenu when IG shows one.
-        submenu = (
-            CREATE_SUBMENU_REEL_ALTERNATIVES
-            if post.type == PostType.REEL
-            else CREATE_SUBMENU_POST_ALTERNATIVES
-        )
-        await _click_first_optional(page, submenu, label="Create submenu choice", timeout_ms=4000)
-
-        # Upload media. Carousel sends all files in a single setInputFiles call;
-        # the UI supports multi-select natively. This also works for single image/video.
         file_input = page.locator(CREATE_FILE_INPUT).first
         await file_input.wait_for(state="attached", timeout=15_000)
         await file_input.set_input_files([str(p) for p in post.media])

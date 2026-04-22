@@ -35,27 +35,68 @@ class NotAuthenticatedError(RuntimeError):
 async def is_logged_in(page: Page) -> bool:
     """Navigate to instagram.com and confirm we landed on the authenticated feed.
 
-    Uses multiple signals: URL didn't redirect to login/challenge, and the
-    navbar's profile avatar is present.
+    Avoids wait_for_load_state('networkidle') — instagram.com holds long-polling
+    connections open indefinitely. After the DOM is ready we dismiss IG's
+    recurring popups ("Save your login info?", "Turn on notifications", app
+    install prompt), then confirm the Home nav link is visible.
     """
     await page.goto(INSTAGRAM_URL, wait_until="domcontentloaded")
-    await page.wait_for_load_state("networkidle", timeout=10_000)
 
     current = page.url
     log.debug("current URL after navigation: %s", current)
-
     for marker in CHALLENGE_URL_MARKERS:
         if marker in current:
             return False
 
-    # The authenticated feed always has a Home nav link with aria-label.
+    # Give IG a moment to render the "Save login info" popup before dismissing it.
+    import asyncio as _asyncio
+    await _asyncio.sleep(2.0)
+    await dismiss_popups(page)
+
     try:
-        await page.locator('a[href="/"][aria-label*="Home" i]').first.wait_for(
-            state="visible", timeout=5_000
-        )
+        # Any of these aria-labels only exist on the authenticated feed chrome.
+        await page.locator(
+            '[aria-label="Home"], [aria-label="New post"], a[href="/direct/inbox/"]'
+        ).first.wait_for(state="visible", timeout=15_000)
         return True
     except Exception:
+        for marker in CHALLENGE_URL_MARKERS:
+            if marker in page.url:
+                return False
         return False
+
+
+# Texts of the dismiss buttons IG shows on first visit / post-login.
+_POPUP_DISMISS_TEXTS = (
+    "Not Now",
+    "Not now",
+    "Dismiss",
+    "Close",
+    "Cancel",
+)
+
+
+async def dismiss_popups(page: Page, *, rounds: int = 3) -> int:
+    """Click through any 'Not Now' / 'Dismiss' popups IG stacks on the feed.
+    Returns the number of popups dismissed. Safe to call when none are present.
+    """
+    dismissed = 0
+    for _ in range(rounds):
+        clicked_this_round = False
+        for text in _POPUP_DISMISS_TEXTS:
+            loc = page.get_by_role("button", name=text).first
+            try:
+                if await loc.is_visible(timeout=1_500):
+                    await loc.click()
+                    dismissed += 1
+                    clicked_this_round = True
+                    log.debug("dismissed popup via '%s'", text)
+                    break
+            except Exception:
+                continue
+        if not clicked_this_round:
+            break
+    return dismissed
 
 
 async def detect_challenge(page: Page) -> None:
