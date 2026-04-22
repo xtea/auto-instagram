@@ -1,0 +1,23 @@
+# Example post descriptor. Drop one or more media files into ./media/,
+# reference them below, and run:
+#   auto-ig publish content/example-post --account demo --dry-run
+#
+# type: feed | carousel | reel
+type: feed
+
+caption: |
+  Hello from auto-instagram. #opensource #automation
+
+# Paths are relative to this post.yaml.
+media:
+  - ./media/photo.jpg
+
+# Optional. Omit for immediate publish. Use an ISO-8601 timestamp (UTC or with offset).
+# schedule: 2026-04-25T14:00:00Z
+
+# Optional.
+# user_tags:
+#   - handle: friend_handle
+#     x: 0.5
+#     y: 0.5
+# location: "San Francisco, California"

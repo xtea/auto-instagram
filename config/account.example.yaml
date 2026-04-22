@@ -1,0 +1,35 @@
+# Copy this file to config/<account-name>.yaml and fill in.
+# The `<account-name>` is what you pass to --account on the CLI.
+
+# Required: IG handle for this account (used only for display / logs).
+handle: your_instagram_handle
+
+# Browser engine. Options: patchright (default, Chromium) | camoufox (Firefox, install with `pip install auto-instagram[camoufox]`)
+browser: patchright
+
+# IMPORTANT: match these to the browser you exported cookies from,
+# or to the one you'll use in `auto-ig login` on your real residential IP.
+# If they drift from the cookie's origin, Instagram will issue a challenge.
+user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+viewport:
+  width: 1440
+  height: 900
+locale: "en-US"
+timezone: "America/Los_Angeles"
+
+# Optional: proxy. Strongly recommend a residential proxy that matches (or is close to)
+# the IP where you originally obtained the cookies.
+# proxy:
+#   server: "http://user:pass@host:port"
+#   bypass: ""
+
+# Pacing — publishing caps and delays. Conservative defaults.
+pacing:
+  max_posts_per_day: 3
+  min_step_delay_seconds: 30
+  max_step_delay_seconds: 180
+  pre_run_idle_seconds_min: 60
+  pre_run_idle_seconds_max: 180
+
+# Headless / headed. Keep headed=true for first runs so you can see what is happening.
+headless: false

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Tooling
+.python-version
+uv.lock.local
+
+# auto-instagram runtime state
+sessions/
+!sessions/.gitkeep
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# user content — they bring their own
+content/*/media/
+content/*/*.jpg
+content/*/*.jpeg
+content/*/*.png
+content/*/*.mp4
+content/*/*.mov
+# keep the example descriptor committed
+!content/example-post/post.yaml
+!content/example-post/media/.gitkeep
+
+# env
+.env
+.env.local
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
