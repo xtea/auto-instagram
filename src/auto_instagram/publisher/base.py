@@ -15,10 +15,13 @@ class PublishResult:
     url: str | None = None
     error: str | None = None
     dry_run: bool = False
+    already_published: bool = False  # dedup guard detected this caption is already live
 
 
 @runtime_checkable
 class Publisher(Protocol):
-    async def publish(self, post: Post, *, dry_run: bool = False) -> PublishResult: ...
+    async def publish(
+        self, post: Post, *, dry_run: bool = False, force: bool = False
+    ) -> PublishResult: ...
 
     async def healthcheck(self) -> bool: ...

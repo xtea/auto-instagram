@@ -24,6 +24,13 @@ from ..config import AccountConfig, PacingSettings
 from ..content.models import Post, PostType
 from ..utils.logging import get_logger
 from .base import PublishResult
+from .profile import (
+    captions_match,
+    detect_own_handle,
+    fetch_post_caption,
+    first_post_href,
+    shortcode_from_href,
+)
 from .selectors import (
     CAPTION_TEXTAREA_ALTERNATIVES,
     CREATE_DIRECT_URL,
@@ -35,7 +42,7 @@ from .selectors import (
 )
 
 if TYPE_CHECKING:
-    from patchright.async_api import Locator, Page
+    from patchright.async_api import BrowserContext, Locator, Page
 
 log = get_logger(__name__)
 
@@ -55,7 +62,9 @@ class PlaywrightWebPublisher:
             page = await ctx.new_page()
             return await is_logged_in(page)
 
-    async def publish(self, post: Post, *, dry_run: bool = False) -> PublishResult:
+    async def publish(
+        self, post: Post, *, dry_run: bool = False, force: bool = False
+    ) -> PublishResult:
         if not self.session_file.exists():
             raise NotAuthenticatedError(
                 f"No session file at {self.session_file}. "
@@ -71,9 +80,27 @@ class PlaywrightWebPublisher:
                 )
             await dismiss_popups(page)
 
+            handle = await detect_own_handle(page) or self.account.handle
+            log.info("Publishing as @%s", handle)
+
+            pre_shortcode = await self._dedup_guard(ctx, handle, post, force=force)
+            if pre_shortcode == _ALREADY_PUBLISHED:
+                return PublishResult(
+                    ok=True,
+                    already_published=True,
+                    shortcode=self._last_seen_shortcode,
+                    url=(
+                        f"https://www.instagram.com/p/{self._last_seen_shortcode}/"
+                        if self._last_seen_shortcode
+                        else None
+                    ),
+                )
+
             await _pre_run_idle(page, self._pacing)
             try:
-                result = await self._run_flow(page, post, dry_run=dry_run)
+                result = await self._run_flow(
+                    ctx, page, post, handle=handle, pre_shortcode=pre_shortcode, dry_run=dry_run
+                )
             except ChallengeRequiredError:
                 raise
             except Exception as e:
@@ -81,8 +108,58 @@ class PlaywrightWebPublisher:
                 raise RuntimeError(f"Publish failed: {e}") from e
             return result
 
+    _last_seen_shortcode: str | None = None
+
+    async def _dedup_guard(
+        self,
+        ctx: BrowserContext,
+        handle: str,
+        post: Post,
+        *,
+        force: bool,
+    ) -> str | None | object:
+        """Return the current most-recent shortcode, or the `_ALREADY_PUBLISHED`
+        sentinel if the latest post's caption matches the incoming caption
+        (and `force` is False). Used both as a dedup check and to record the
+        pre-publish marker for shortcode-delta confirmation."""
+        check_page = await ctx.new_page()
+        try:
+            href = await first_post_href(check_page, handle)
+            sc = shortcode_from_href(href)
+            if not sc:
+                log.debug("No existing posts on profile; dedup skipped.")
+                return None
+
+            if force:
+                log.debug("--force: skipping dedup check.")
+                return sc
+
+            if not post.caption:
+                # Without a caption we can't reliably dedup; fall through.
+                return sc
+
+            latest_caption = await fetch_post_caption(check_page, sc)
+            if captions_match(latest_caption, post.caption):
+                log.warning(
+                    "Latest post (shortcode %s) already has this exact caption; "
+                    "treating as already-published. Use --force to override.",
+                    sc,
+                )
+                self._last_seen_shortcode = sc
+                return _ALREADY_PUBLISHED
+            return sc
+        finally:
+            await check_page.close()
+
     async def _run_flow(
-        self, page: Page, post: Post, *, dry_run: bool
+        self,
+        ctx: BrowserContext,
+        page: Page,
+        post: Post,
+        *,
+        handle: str,
+        pre_shortcode: str | None | object,
+        dry_run: bool,
     ) -> PublishResult:
         log.info("Opening Create page for %s (%s)", post.source_dir.name, post.type.value)
 
@@ -121,9 +198,12 @@ class PlaywrightWebPublisher:
             return PublishResult(ok=True, dry_run=True)
 
         await _click_button_by_text(page, MODAL_SHARE_BUTTON_TEXT, label="Share")
-        log.info("Share clicked; waiting for confirmation...")
+        log.info("Share clicked; confirming publish...")
 
-        shortcode = await _wait_for_share_confirmation(page, timeout_ms=120_000)
+        pre_sc = pre_shortcode if isinstance(pre_shortcode, str) else None
+        shortcode = await _confirm_publish(
+            page, ctx, handle=handle, pre_shortcode=pre_sc, timeout_ms=180_000
+        )
         url = f"https://www.instagram.com/p/{shortcode}/" if shortcode else None
         return PublishResult(ok=True, shortcode=shortcode, url=url)
 
@@ -224,28 +304,100 @@ async def _fill_caption(page: Page, caption: str) -> None:
     raise TimeoutError("Could not locate caption textarea.")
 
 
-async def _wait_for_share_confirmation(page: Page, *, timeout_ms: int) -> str | None:
-    """Wait for IG's 'your post has been shared' acknowledgement, then try
-    to extract the media shortcode from whatever link it surfaces or the
-    current URL if it redirects."""
-    import asyncio as _asyncio
+async def _confirm_publish(
+    page: Page,
+    ctx: BrowserContext,
+    *,
+    handle: str,
+    pre_shortcode: str | None,
+    timeout_ms: int,
+) -> str | None:
+    """Confirm that Share actually landed the post.
 
-    deadline = _asyncio.get_event_loop().time() + timeout_ms / 1000
-    while _asyncio.get_event_loop().time() < deadline:
-        # Confirmation text in the modal
-        for msg in POST_SHARED_TEXT_ALTERNATIVES:
-            if await page.get_by_text(msg).first.is_visible():
-                # Try to find an anchor to /p/<shortcode>/ or /reel/<shortcode>/
+    Two signals, either of which is sufficient:
+
+    1. **Fast path:** IG's 'your post has been shared' banner — the existing
+       text selectors; when they render we also try to read the shortcode
+       from a nearby link.
+    2. **Authoritative path:** the user's profile grid advanced — the first
+       post's shortcode differs from the `pre_shortcode` we recorded before
+       clicking Share. This runs in a separate page so the create modal is
+       not disturbed.
+
+    The profile check starts after a brief grace period (IG sometimes needs
+    a few seconds to surface the new post on the grid) and repeats until the
+    deadline. A final profile check runs at deadline as a last-ditch
+    recovery before giving up.
+    """
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+    deadline = start + timeout_ms / 1000
+    grace_until = start + 8.0
+
+    while loop.time() < deadline:
+        text_hit, text_sc = await _try_text_confirmation(page)
+        if text_sc:
+            return text_sc
+        # Either the text banner was shown (but no shortcode available) or we
+        # are past the grace period — either way, do an authoritative profile
+        # check and return if the grid advanced.
+        if text_hit or loop.time() > grace_until:
+            sc = await _profile_delta(ctx, handle, pre_shortcode)
+            if sc:
+                return sc
+            if text_hit:
+                # Banner appeared but the grid hasn't caught up yet; retry
+                # briefly then come back.
+                await asyncio.sleep(3.0)
+                sc = await _profile_delta(ctx, handle, pre_shortcode)
+                if sc:
+                    return sc
+        await asyncio.sleep(2.0)
+
+    # Final shot: give the profile one more check in case the feed was slow.
+    sc = await _profile_delta(ctx, handle, pre_shortcode)
+    if sc:
+        return sc
+    raise TimeoutError(
+        "Share confirmation not detected (neither the in-modal banner nor a new post on the profile)."
+    )
+
+
+async def _try_text_confirmation(page: Page) -> tuple[bool, str | None]:
+    """Check IG's 'shared' banner. Returns (banner_visible, shortcode_if_found)."""
+    for msg in POST_SHARED_TEXT_ALTERNATIVES:
+        try:
+            if await page.get_by_text(msg).first.is_visible(timeout=500):
                 anchor = page.locator('a[href*="/p/"], a[href*="/reel/"]').first
                 try:
-                    href = await anchor.get_attribute("href", timeout=2_000)
+                    href = await anchor.get_attribute("href", timeout=1_500)
                     if href:
                         m = re.search(r"/(?:p|reel)/([^/?]+)/", href)
                         if m:
-                            return m.group(1)
+                            return True, m.group(1)
                 except Exception:
                     pass
-                return None
-        await _asyncio.sleep(1.0)
+                return True, None
+        except Exception:
+            continue
+    return False, None
 
-    raise TimeoutError("Timed out waiting for share confirmation.")
+
+async def _profile_delta(
+    ctx: BrowserContext, handle: str, pre_shortcode: str | None
+) -> str | None:
+    """Open a scratch page, check the profile's first shortcode; return it
+    only if it differs from pre_shortcode."""
+    probe = await ctx.new_page()
+    try:
+        href = await first_post_href(probe, handle, timeout_ms=8_000)
+        sc = shortcode_from_href(href)
+        if sc and sc != pre_shortcode:
+            return sc
+        return None
+    finally:
+        await probe.close()
+
+
+# Sentinel used internally; never leaves this module.
+_ALREADY_PUBLISHED = object()

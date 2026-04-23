@@ -1,6 +1,6 @@
 [project]
 name = "auto-instagram"
-version = "0.1.1"
+version = "0.1.2"
 description = "Open-source Instagram publisher that drives instagram.com with Playwright and imported cookies."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -111,6 +111,7 @@ def publish(
     post_dir: Annotated[Path, typer.Argument(help="Directory containing post.yaml")],
     account: AccountOpt = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Walk the UI but don't click Share")] = False,
+    force: Annotated[bool, typer.Option("--force", help="Skip the pre-publish duplicate-caption guard")] = False,
 ) -> None:
     """Publish a single post immediately."""
     s, name = _settings(account)
@@ -128,7 +129,7 @@ def publish(
 
     pub = PlaywrightWebPublisher(cfg, s.session_file(name))
     try:
-        result: PublishResult = asyncio.run(pub.publish(post, dry_run=dry_run))
+        result: PublishResult = asyncio.run(pub.publish(post, dry_run=dry_run, force=force))
     except ChallengeRequiredError as e:
         store.mark_paused(job_id, str(e))
         console.print(f"[yellow]Paused:[/yellow] {e}")
@@ -148,6 +149,13 @@ def publish(
         return
 
     store.mark_succeeded(job_id, shortcode=result.shortcode, url=result.url)
+    if result.already_published:
+        target = result.url or f"(shortcode {result.shortcode})"
+        console.print(
+            f"[yellow]Already published[/yellow]: skipping. Existing post: {target}. "
+            "Use --force to post anyway."
+        )
+        return
     if result.url:
         console.print(f"[green]Published[/green]: {result.url}")
     else:
